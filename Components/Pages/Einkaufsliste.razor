@@ -1,0 +1,359 @@
+@page "/einkaufsliste"
+@rendermode InteractiveServer
+
+<PageTitle>Einkaufsliste</PageTitle>
+
+<div class="shopping-page">
+    <div class="page-heading">
+        <p class="eyebrow">Alltag einfach organisieren</p>
+        <h1>🛒 Einkaufsliste</h1>
+        <p class="intro">Verwalte deine Einkäufe und sammle Zutaten für deine Lieblingsgerichte.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(speicherFehler))
+    {
+        <div class="validation-summary">@speicherFehler</div>
+    }
+
+    <div class="content-grid">
+        <section class="card shopping-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Was brauchst du?</p>
+                    <h2>Meine Einkaufsliste</h2>
+                </div>
+                <span class="item-count">@einkaufsliste.Count Artikel</span>
+            </div>
+
+            <EditForm Model="artikelEingabe" OnValidSubmit="ArtikelHinzufuegen">
+                <DataAnnotationsValidator />
+                <div class="form-grid">
+                    <div class="field field-wide">
+                        <label for="artikel-name">Artikel oder Gericht</label>
+                        <input id="artikel-name" @bind="artikelEingabe.Name" list="gerichte-vorschlaege"
+                               placeholder="z. B. Milch oder Pfannkuchen" />
+                        <ValidationMessage For="@(() => artikelEingabe.Name)" />
+                    </div>
+                    <div class="field">
+                        <label for="artikel-menge">Menge</label>
+                        <input id="artikel-menge" @bind="artikelEingabe.Menge" type="number" min="0.01" step="0.01" />
+                        <ValidationMessage For="@(() => artikelEingabe.Menge)" />
+                    </div>
+                    <div class="field">
+                        <label for="artikel-einheit">Einheit</label>
+                        <input id="artikel-einheit" @bind="artikelEingabe.Einheit" placeholder="z. B. Stück, kg" />
+                        <ValidationMessage For="@(() => artikelEingabe.Einheit)" />
+                    </div>
+                    <div class="field field-wide">
+                        <label for="artikel-notiz">Notiz <span>(optional)</span></label>
+                        <input id="artikel-notiz" @bind="artikelEingabe.Notiz" placeholder="z. B. Vollmilch" />
+                        <ValidationMessage For="@(() => artikelEingabe.Notiz)" />
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit">Hinzufügen</button>
+                </div>
+            </EditForm>
+            <datalist id="gerichte-vorschlaege">
+                @foreach (Gericht gericht in gerichte)
+                {
+                    <option value="@gericht.Name"></option>
+                }
+            </datalist>
+            <p class="input-hint">Bei einem gespeicherten Gericht werden alle Zutaten automatisch übernommen.</p>
+
+            @if (einkaufsliste.Count == 0)
+            {
+                <p class="empty-message">Noch keine Artikel vorhanden.</p>
+            }
+            else
+            {
+                <ul class="item-list">
+                    @foreach (Artikel artikel in einkaufsliste)
+                    {
+                        <li class="list-item @(artikel.Erledigt ? "completed" : "")">
+                            <label>
+                                <input type="checkbox" @bind="artikel.Erledigt" @bind:after="Speichern" />
+                                <span>
+                                    @artikel.Menge @artikel.Einheit @artikel.Name
+                                    @if (!string.IsNullOrWhiteSpace(artikel.Notiz))
+                                    {
+                                        <small class="item-note">(@artikel.Notiz)</small>
+                                    }
+                                </span>
+                            </label>
+                            <button type="button" class="delete-button" @onclick="() => ArtikelLoeschen(artikel)">
+                                Löschen
+                            </button>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="card recipes-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">Für später vorgemerkt</p>
+                    <h2>🍝 Meine Gerichte</h2>
+                </div>
+                <span class="item-count">@gerichte.Count Gerichte</span>
+            </div>
+
+            <EditForm Model="gerichtEingabe" OnValidSubmit="GerichtHinzufuegen">
+                <DataAnnotationsValidator />
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="gericht-name">Gerichtname</label>
+                        <input id="gericht-name" @bind="gerichtEingabe.Name" placeholder="z. B. Pfannkuchen" />
+                        <ValidationMessage For="@(() => gerichtEingabe.Name)" />
+                    </div>
+                    <div class="field">
+                        <label for="gericht-kategorie">Kategorie</label>
+                        <input id="gericht-kategorie" @bind="gerichtEingabe.Kategorie" placeholder="z. B. Hauptgericht" />
+                        <ValidationMessage For="@(() => gerichtEingabe.Kategorie)" />
+                    </div>
+                    <div class="field">
+                        <label for="gericht-zutat">Erste Zutat</label>
+                        <input id="gericht-zutat" @bind="gerichtEingabe.Zutat" placeholder="z. B. Mehl" />
+                        <ValidationMessage For="@(() => gerichtEingabe.Zutat)" />
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit">Gericht hinzufügen</button>
+                </div>
+            </EditForm>
+
+            @if (gerichte.Count == 0)
+            {
+                <p class="empty-message">Noch keine Gerichte vorhanden.</p>
+            }
+            else
+            {
+                <div class="recipe-list">
+                    @foreach (Gericht gericht in gerichte)
+                    {
+                        <article class="recipe">
+                            <h3>@gericht.Name</h3>
+                            <p class="recipe-category">@gericht.Kategorie</p>
+                            <ul class="ingredient-list">
+                                @foreach (string zutat in gericht.Zutaten)
+                                {
+                                    <li>@zutat</li>
+                                }
+                            </ul>
+                            <EditForm Model="neueZutaten[gericht]" OnValidSubmit="() => ZutatHinzufuegen(gericht)">
+                                <DataAnnotationsValidator />
+                                <div class="input-row ingredient-input">
+                                    <div class="field">
+                                        <label for="zutat-@gericht.Name">Weitere Zutat</label>
+                                        <input id="zutat-@gericht.Name" @bind="neueZutaten[gericht].Name" placeholder="Zutat eingeben" />
+                                        <ValidationMessage For="@(() => neueZutaten[gericht].Name)" />
+                                    </div>
+                                    <button type="submit">Zutat hinzufügen</button>
+                                </div>
+                            </EditForm>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private const string SpeicherSchluessel = "einkaufslisterichtig-state";
+    [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
+    [Inject] private EinkaufslistenService EinkaufslistenService { get; set; } = default!;
+
+    private readonly List<Artikel> einkaufsliste = [];
+    private readonly List<Gericht> gerichte = [];
+    private readonly Dictionary<Gericht, ZutatEingabe> neueZutaten = [];
+    private readonly Artikel artikelEingabe = new();
+    private readonly GerichtEingabe gerichtEingabe = new();
+    private bool datenGeladen;
+    private string speicherFehler = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        string? gespeicherteDaten = await JSRuntime.InvokeAsync<string?>("localStorage.getItem", SpeicherSchluessel);
+        if (!string.IsNullOrWhiteSpace(gespeicherteDaten))
+        {
+            GespeichertenStandLaden(gespeicherteDaten);
+        }
+
+        datenGeladen = true;
+        StateHasChanged();
+    }
+
+    private async Task ArtikelHinzufuegen()
+    {
+        string artikelName = artikelEingabe.Name.Trim();
+        Gericht? gericht = gerichte.FirstOrDefault(g =>
+            string.Equals(g.Name, artikelName, StringComparison.OrdinalIgnoreCase));
+
+        if (gericht is not null)
+        {
+            foreach (string zutat in gericht.Zutaten)
+            {
+                ArtikelHinzufuegenOderMengeAddieren(
+                    zutat,
+                    artikelEingabe.Menge,
+                    artikelEingabe.Einheit.Trim(),
+                    artikelEingabe.Notiz.Trim());
+            }
+        }
+        else
+        {
+            ArtikelHinzufuegenOderMengeAddieren(
+                artikelName,
+                artikelEingabe.Menge,
+                artikelEingabe.Einheit.Trim(),
+                artikelEingabe.Notiz.Trim());
+        }
+
+        artikelEingabe.Name = string.Empty;
+        artikelEingabe.Menge = 1;
+        artikelEingabe.Einheit = "Stück";
+        artikelEingabe.Notiz = string.Empty;
+        await Speichern();
+    }
+
+    private void ArtikelHinzufuegenOderMengeAddieren(
+        string name,
+        decimal menge,
+        string einheit,
+        string notiz)
+    {
+        Artikel? vorhandenerArtikel = einkaufsliste.FirstOrDefault(artikel =>
+            string.Equals(artikel.Name, name, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(artikel.Einheit, einheit, StringComparison.OrdinalIgnoreCase));
+
+        if (vorhandenerArtikel is not null)
+        {
+            vorhandenerArtikel.Menge += menge;
+            if (string.IsNullOrWhiteSpace(vorhandenerArtikel.Notiz) && !string.IsNullOrWhiteSpace(notiz))
+            {
+                vorhandenerArtikel.Notiz = notiz;
+            }
+
+            return;
+        }
+
+        einkaufsliste.Add(new Artikel
+        {
+            Name = name,
+            Menge = menge,
+            Einheit = einheit,
+            Notiz = notiz
+        });
+    }
+
+    private async Task ArtikelLoeschen(Artikel artikel)
+    {
+        einkaufsliste.Remove(artikel);
+        await Speichern();
+    }
+
+    private async Task GerichtHinzufuegen()
+    {
+        string gerichtName = gerichtEingabe.Name.Trim();
+        string zutat = gerichtEingabe.Zutat.Trim();
+        if (gerichte.Any(g => string.Equals(g.Name, gerichtName, StringComparison.OrdinalIgnoreCase)))
+        {
+            speicherFehler = "Dieses Gericht ist bereits gespeichert.";
+            return;
+        }
+
+        var gericht = new Gericht
+        {
+            Name = gerichtName,
+            Kategorie = gerichtEingabe.Kategorie.Trim(),
+            Zutaten = [zutat]
+        };
+        gerichte.Add(gericht);
+        neueZutaten[gericht] = new ZutatEingabe();
+        gerichtEingabe.Name = string.Empty;
+        gerichtEingabe.Kategorie = string.Empty;
+        gerichtEingabe.Zutat = string.Empty;
+        await Speichern();
+    }
+
+    private async Task ZutatHinzufuegen(Gericht gericht)
+    {
+        ZutatEingabe eingabe = neueZutaten[gericht];
+        if (gericht.Zutaten.Any(zutat => string.Equals(zutat, eingabe.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            speicherFehler = "Diese Zutat ist im Gericht bereits enthalten.";
+            return;
+        }
+
+        gericht.Zutaten.Add(eingabe.Name.Trim());
+        eingabe.Name = string.Empty;
+        await Speichern();
+    }
+
+    private async Task Speichern()
+    {
+        if (!datenGeladen)
+        {
+            return;
+        }
+
+        if (!EinkaufslistenService.KannSpeichern(einkaufsliste.Cast<object>().Concat(gerichte), out _))
+        {
+            speicherFehler = "Die Daten konnten nicht gespeichert werden. Bitte prüfe die Eingaben.";
+            return;
+        }
+
+        speicherFehler = string.Empty;
+        var stand = new EinkaufslistenStand { Artikel = einkaufsliste, Gerichte = gerichte };
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            SpeicherSchluessel,
+            System.Text.Json.JsonSerializer.Serialize(stand));
+    }
+
+    private void GespeichertenStandLaden(string gespeicherteDaten)
+    {
+        EinkaufslistenStand? stand = System.Text.Json.JsonSerializer.Deserialize<EinkaufslistenStand>(gespeicherteDaten);
+        if (stand is null)
+        {
+            return;
+        }
+
+        foreach (Artikel artikel in stand.Artikel ?? [])
+        {
+            if (artikel.Menge <= 0)
+            {
+                artikel.Menge = 1;
+            }
+            if (string.IsNullOrWhiteSpace(artikel.Einheit))
+            {
+                artikel.Einheit = "Stück";
+            }
+        }
+
+        einkaufsliste.AddRange(stand.Artikel ?? []);
+        gerichte.AddRange(stand.Gerichte ?? []);
+        foreach (Gericht gericht in gerichte)
+        {
+            if (string.IsNullOrWhiteSpace(gericht.Kategorie))
+            {
+                gericht.Kategorie = "Sonstiges";
+            }
+            neueZutaten[gericht] = new ZutatEingabe();
+        }
+    }
+
+    private sealed class EinkaufslistenStand
+    {
+        public List<Artikel> Artikel { get; set; } = [];
+        public List<Gericht> Gerichte { get; set; } = [];
+    }
+}
