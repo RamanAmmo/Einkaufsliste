@@ -73,7 +73,7 @@
                     {
                         <li class="list-item @(artikel.Erledigt ? "completed" : "")">
                             <label>
-                                <input type="checkbox" @bind="artikel.Erledigt" @bind:after="Speichern" />
+                                <input type="checkbox" @bind="artikel.Erledigt" @bind:after="() => ErledigtAendern(artikel)" />
                                 <span>
                                     @artikel.Menge @artikel.Einheit @artikel.Name
                                     @if (!string.IsNullOrWhiteSpace(artikel.Notiz))
@@ -135,24 +135,31 @@
                     {
                         <article class="recipe">
                             <h3>@gericht.Name</h3>
-                            <p class="recipe-category">@gericht.Kategorie</p>
+                            <p class="recipe-category">@gericht.Kategorie?.Name</p>
                             <ul class="ingredient-list">
-                                @foreach (string zutat in gericht.Zutaten)
+                                @foreach (GerichtZutat gz in gericht.GerichtZutaten)
                                 {
-                                    <li>@zutat</li>
+                                    <li>
+                                        @gz.Zutat?.Name
+                                        <button type="button" class="delete-button"
+                                                @onclick="() => ZutatEntfernen(gericht, gz)">Entfernen</button>
+                                    </li>
                                 }
                             </ul>
-                            <EditForm Model="neueZutaten[gericht]" OnValidSubmit="() => ZutatHinzufuegen(gericht)">
+                            <EditForm Model="neueZutaten[gericht.Id]" OnValidSubmit="() => ZutatHinzufuegen(gericht)">
                                 <DataAnnotationsValidator />
                                 <div class="input-row ingredient-input">
                                     <div class="field">
-                                        <label for="zutat-@gericht.Name">Weitere Zutat</label>
-                                        <input id="zutat-@gericht.Name" @bind="neueZutaten[gericht].Name" placeholder="Zutat eingeben" />
-                                        <ValidationMessage For="@(() => neueZutaten[gericht].Name)" />
+                                        <label for="zutat-@gericht.Id">Weitere Zutat</label>
+                                        <input id="zutat-@gericht.Id" @bind="neueZutaten[gericht.Id].Name" placeholder="Zutat eingeben" />
+                                        <ValidationMessage For="@(() => neueZutaten[gericht.Id].Name)" />
                                     </div>
                                     <button type="submit">Zutat hinzufügen</button>
                                 </div>
                             </EditForm>
+                            <button type="button" class="delete-button" @onclick="() => GerichtLoeschen(gericht)">
+                                Gericht löschen
+                            </button>
                         </article>
                     }
                 </div>
@@ -162,198 +169,116 @@
 </div>
 
 @code {
-    private const string SpeicherSchluessel = "einkaufslisterichtig-state";
-    [Inject] private IJSRuntime JSRuntime { get; set; } = default!;
     [Inject] private EinkaufslistenService EinkaufslistenService { get; set; } = default!;
 
-    private readonly List<Artikel> einkaufsliste = [];
-    private readonly List<Gericht> gerichte = [];
-    private readonly Dictionary<Gericht, ZutatEingabe> neueZutaten = [];
+    private List<Artikel> einkaufsliste = [];
+    private List<Gericht> gerichte = [];
+    private readonly Dictionary<int, ZutatEingabe> neueZutaten = [];
     private readonly Artikel artikelEingabe = new();
     private readonly GerichtEingabe gerichtEingabe = new();
-    private bool datenGeladen;
     private string speicherFehler = string.Empty;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnInitializedAsync()
     {
-        if (!firstRender)
-        {
-            return;
-        }
+        await Laden();
+    }
 
-        string? gespeicherteDaten = await JSRuntime.InvokeAsync<string?>("localStorage.getItem", SpeicherSchluessel);
-        if (!string.IsNullOrWhiteSpace(gespeicherteDaten))
-        {
-            GespeichertenStandLaden(gespeicherteDaten);
-        }
+    /// <summary>Liest den aktuellen Stand aus der Datenbank.</summary>
+    private async Task Laden()
+    {
+        einkaufsliste = await EinkaufslistenService.GetArtikelAsync();
+        gerichte = await EinkaufslistenService.GetGerichteAsync();
 
-        datenGeladen = true;
-        StateHasChanged();
+        foreach (Gericht gericht in gerichte)
+        {
+            if (!neueZutaten.ContainsKey(gericht.Id))
+            {
+                neueZutaten[gericht.Id] = new ZutatEingabe();
+            }
+        }
     }
 
     private async Task ArtikelHinzufuegen()
     {
-        string artikelName = artikelEingabe.Name.Trim();
-        Gericht? gericht = gerichte.FirstOrDefault(g =>
-            string.Equals(g.Name, artikelName, StringComparison.OrdinalIgnoreCase));
+        SpeicherErgebnis ergebnis = await EinkaufslistenService.ArtikelHinzufuegenAsync(
+            artikelEingabe.Name,
+            artikelEingabe.Menge,
+            artikelEingabe.Einheit,
+            artikelEingabe.Notiz);
 
-        if (gericht is not null)
+        if (!ergebnis.Erfolg)
         {
-            foreach (string zutat in gericht.Zutaten)
-            {
-                ArtikelHinzufuegenOderMengeAddieren(
-                    zutat,
-                    artikelEingabe.Menge,
-                    artikelEingabe.Einheit.Trim(),
-                    artikelEingabe.Notiz.Trim());
-            }
-        }
-        else
-        {
-            ArtikelHinzufuegenOderMengeAddieren(
-                artikelName,
-                artikelEingabe.Menge,
-                artikelEingabe.Einheit.Trim(),
-                artikelEingabe.Notiz.Trim());
+            speicherFehler = ergebnis.Fehler ?? string.Empty;
+            return;
         }
 
         artikelEingabe.Name = string.Empty;
         artikelEingabe.Menge = 1;
         artikelEingabe.Einheit = "Stück";
         artikelEingabe.Notiz = string.Empty;
-        await Speichern();
+        speicherFehler = string.Empty;
+        await Laden();
     }
 
-    private void ArtikelHinzufuegenOderMengeAddieren(
-        string name,
-        decimal menge,
-        string einheit,
-        string notiz)
+    private async Task ErledigtAendern(Artikel artikel)
     {
-        Artikel? vorhandenerArtikel = einkaufsliste.FirstOrDefault(artikel =>
-            string.Equals(artikel.Name, name, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(artikel.Einheit, einheit, StringComparison.OrdinalIgnoreCase));
-
-        if (vorhandenerArtikel is not null)
-        {
-            vorhandenerArtikel.Menge += menge;
-            if (string.IsNullOrWhiteSpace(vorhandenerArtikel.Notiz) && !string.IsNullOrWhiteSpace(notiz))
-            {
-                vorhandenerArtikel.Notiz = notiz;
-            }
-
-            return;
-        }
-
-        einkaufsliste.Add(new Artikel
-        {
-            Name = name,
-            Menge = menge,
-            Einheit = einheit,
-            Notiz = notiz
-        });
+        await EinkaufslistenService.ErledigtSetzenAsync(artikel.Id, artikel.Erledigt);
     }
 
     private async Task ArtikelLoeschen(Artikel artikel)
     {
-        einkaufsliste.Remove(artikel);
-        await Speichern();
+        await EinkaufslistenService.ArtikelLoeschenAsync(artikel.Id);
+        await Laden();
     }
 
     private async Task GerichtHinzufuegen()
     {
-        string gerichtName = gerichtEingabe.Name.Trim();
-        string zutat = gerichtEingabe.Zutat.Trim();
-        if (gerichte.Any(g => string.Equals(g.Name, gerichtName, StringComparison.OrdinalIgnoreCase)))
+        SpeicherErgebnis ergebnis = await EinkaufslistenService.GerichtAnlegenAsync(
+            gerichtEingabe.Name,
+            gerichtEingabe.Kategorie,
+            gerichtEingabe.Zutat);
+
+        if (!ergebnis.Erfolg)
         {
-            speicherFehler = "Dieses Gericht ist bereits gespeichert.";
+            speicherFehler = ergebnis.Fehler ?? string.Empty;
             return;
         }
 
-        var gericht = new Gericht
-        {
-            Name = gerichtName,
-            Kategorie = gerichtEingabe.Kategorie.Trim(),
-            Zutaten = [zutat]
-        };
-        gerichte.Add(gericht);
-        neueZutaten[gericht] = new ZutatEingabe();
         gerichtEingabe.Name = string.Empty;
         gerichtEingabe.Kategorie = string.Empty;
         gerichtEingabe.Zutat = string.Empty;
-        await Speichern();
+        speicherFehler = string.Empty;
+        await Laden();
     }
 
     private async Task ZutatHinzufuegen(Gericht gericht)
     {
-        ZutatEingabe eingabe = neueZutaten[gericht];
-        if (gericht.Zutaten.Any(zutat => string.Equals(zutat, eingabe.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+        ZutatEingabe eingabe = neueZutaten[gericht.Id];
+        SpeicherErgebnis ergebnis = await EinkaufslistenService.ZutatHinzufuegenAsync(gericht.Id, eingabe.Name);
+
+        if (!ergebnis.Erfolg)
         {
-            speicherFehler = "Diese Zutat ist im Gericht bereits enthalten.";
+            speicherFehler = ergebnis.Fehler ?? string.Empty;
             return;
         }
 
-        gericht.Zutaten.Add(eingabe.Name.Trim());
         eingabe.Name = string.Empty;
-        await Speichern();
-    }
-
-    private async Task Speichern()
-    {
-        if (!datenGeladen)
-        {
-            return;
-        }
-
-        if (!EinkaufslistenService.KannSpeichern(einkaufsliste.Cast<object>().Concat(gerichte), out _))
-        {
-            speicherFehler = "Die Daten konnten nicht gespeichert werden. Bitte prüfe die Eingaben.";
-            return;
-        }
-
         speicherFehler = string.Empty;
-        var stand = new EinkaufslistenStand { Artikel = einkaufsliste, Gerichte = gerichte };
-        await JSRuntime.InvokeVoidAsync(
-            "localStorage.setItem",
-            SpeicherSchluessel,
-            System.Text.Json.JsonSerializer.Serialize(stand));
+        await Laden();
     }
 
-    private void GespeichertenStandLaden(string gespeicherteDaten)
+    private async Task ZutatEntfernen(Gericht gericht, GerichtZutat gz)
     {
-        EinkaufslistenStand? stand = System.Text.Json.JsonSerializer.Deserialize<EinkaufslistenStand>(gespeicherteDaten);
-        if (stand is null)
-        {
-            return;
-        }
-
-        foreach (Artikel artikel in stand.Artikel ?? [])
-        {
-            if (artikel.Menge <= 0)
-            {
-                artikel.Menge = 1;
-            }
-            if (string.IsNullOrWhiteSpace(artikel.Einheit))
-            {
-                artikel.Einheit = "Stück";
-            }
-        }
-
-        einkaufsliste.AddRange(stand.Artikel ?? []);
-        gerichte.AddRange(stand.Gerichte ?? []);
-        foreach (Gericht gericht in gerichte)
-        {
-            if (string.IsNullOrWhiteSpace(gericht.Kategorie))
-            {
-                gericht.Kategorie = "Sonstiges";
-            }
-            neueZutaten[gericht] = new ZutatEingabe();
-        }
+        SpeicherErgebnis ergebnis = await EinkaufslistenService.ZutatEntfernenAsync(gericht.Id, gz.ZutatId);
+        speicherFehler = ergebnis.Erfolg ? string.Empty : ergebnis.Fehler ?? string.Empty;
+        await Laden();
     }
 
-    private sealed class EinkaufslistenStand
+    private async Task GerichtLoeschen(Gericht gericht)
     {
-        public List<Artikel> Artikel { get; set; } = [];
-        public List<Gericht> Gerichte { get; set; } = [];
+        await EinkaufslistenService.GerichtLoeschenAsync(gericht.Id);
+        neueZutaten.Remove(gericht.Id);
+        speicherFehler = string.Empty;
+        await Laden();
     }
 }

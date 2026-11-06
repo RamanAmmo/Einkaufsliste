@@ -4,6 +4,8 @@ namespace einkaufslisterichtig.Models;
 
 public class Artikel : IValidatableObject
 {
+    public int Id { get; set; }
+
     [Required(ErrorMessage = "Bitte gib einen Artikel- oder Gerichtnamen ein.")]
     [StringLength(100, ErrorMessage = "Der Name darf höchstens 100 Zeichen lang sein.")]
     public string Name { get; set; } = string.Empty;
