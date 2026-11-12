@@ -20,6 +20,18 @@ der LocalStorage nicht verändert.
 | Gespeicherte Modelle | Service prüft alle Modelle vor dem Speichern | Ungültige Daten dürfen auch bei einem direkten Service-Aufruf nicht gespeichert werden. | Ein ungültiger Artikel oder ein ungültiges Gericht führt zu keinem Speichervorgang. |
 | Zutaten aus mehreren Gerichten | Gleiche Zutat und gleiche Einheit werden zusammengeführt und mengenmäßig addiert | Werden beispielsweise für zwei Gerichte Tomaten benötigt, soll die Einkaufsliste die gesamte benötigte Menge anzeigen statt einen Bedarf zu verlieren. Unterschiedliche Einheiten werden nicht ohne Umrechnung vermischt. | 2 Stück Tomaten plus 3 Stück Tomaten ergeben 5 Stück Tomaten; 2 kg und 3 Stück bleiben getrennte Einträge. |
 
-Eine Datenbank und damit ein Datenbank-Unique-Index existieren in dieser
-Projektstufe noch nicht. Die lokale Prüfung auf doppelte Gerichtnamen und
-Zutaten verhindert bereits die fachlich relevanten Duplikate.
+## Übereinstimmung mit der Datenbank
+
+Seit der Datenbank-Implementierung gelten dieselben Regeln zusätzlich im Schema (Details in `DOKUMENTATION.md`):
+
+| Regel in der Anwendung | Regel in der Datenbank |
+|---|---|
+| Pflichtfelder (`Required`) | `NOT NULL` |
+| Maximale Längen (`StringLength`) | `HasMaxLength` je Spalte (Artikel 100/20/200, Gericht 80, Kategorie 30, Zutat 100) |
+| Menge 0,01 bis 10.000 | `CHECK`-Constraint `CK_Artikel_Menge` |
+| Keine doppelten Zutaten in einem Gericht | Zusammengesetzter Primärschlüssel (`GerichtId`, `ZutatId`) |
+| Doppelte Gerichtnamen, Kategorien und Zutaten (ohne Beachtung der Schreibweise) | Unique-Index mit `NOCASE` |
+| Gleicher Artikel mit gleicher Einheit wird zusammengeführt | Unique-Index (`Name`, `Einheit`) |
+| Bei „Stück“ ganze Menge, nur Buchstaben und Punkte in der Einheit, Buchstabe oder Zahl im Namen | Nur in der Anwendung (`IValidatableObject`, `RegularExpression`), da SQLite dafür keine sinnvolle Entsprechung bietet |
+
+Die Anwendungsvalidierung bleibt die erste Schranke und liefert verständliche Meldungen. Die Datenbank ist die zweite Schranke, falls Daten an ihr vorbei geschrieben werden.

@@ -247,3 +247,10 @@ button:hover {
         flex-direction: column;
     }
 }
+
+.ingredient-list li {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: space-between;
+}

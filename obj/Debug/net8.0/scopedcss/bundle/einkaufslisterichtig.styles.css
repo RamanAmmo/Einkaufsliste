@@ -451,3 +451,10 @@ button:hover[b-8vf8ng9kir] {
         flex-direction: column;
     }
 }
+
+.ingredient-list li[b-8vf8ng9kir] {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: space-between;
+}
